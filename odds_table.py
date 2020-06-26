@@ -13,9 +13,47 @@ from pandas.api.types import is_numeric_dtype
 from pandas.api.types import is_categorical_dtype
 from pandas.api.types import is_datetime64_any_dtype
 from pandas.api.types import is_bool_dtype
+from sklearn.base import BaseEstimator, TransformerMixin
 
 
-class odds_table():
+class BasicNumericBinner( BaseEstimator, TransformerMixin ):
+    """ 
+    Format pandas.Series to categorical varible; bin numeric and datetime data;
+    
+    X (pandas.Series): input variable to be formatted/trnaformed
+    cuts (int): if numeric or datetime - the number of equcly sized chunks o cut the data in
+    add_missing (bool): whether to add a missing category
+    ignore_name (bool): whether to check for the variable name when transforming
+    """
+    def __init__( self,cuts:int =10,add_missing: bool = True):
+        self.cuts = cuts
+        self.add_missing = add_missing
+       
+    def fit( self, X ):
+      self.f_maps = {}
+      self.X_name  =X.name
+      _, bins = pd.qcut(X, self.cuts, retbins=True, labels=False,duplicates='drop')
+      bins[len(bins)-1]=float("inf")
+      bins[0]=float("-inf")
+      f_map = bins
+      self.f_maps[X.name] = f_map
+      return self
+    
+
+    def transform( self, X,ignore_name =False):
+      X = X.copy()
+      if ignore_name:
+          X= pd.cut(X,bins=self.f_maps[self.X_name])
+      else:
+          X= pd.cut(X,bins=self.f_maps[X.name])
+      if self.add_missing:
+          X = X.cat.add_categories(['MISSING'])
+          X = X.fillna('MISSING')
+      return X 
+
+
+
+class OddsTable():
     """ 
     Creates a pandas.DataFrame containing Odds Index and basic stats.
     
@@ -33,26 +71,18 @@ class odds_table():
     """
     def __init__(self,name:str ='Odds Table',
                      p_cls_label :str ='postive',
-                     n_cls_label:str='negative',
-                     cuts :int = 10):
+                     n_cls_label:str='negative'):
         self.table = None
         self.name = name
         self.p_cls_label = p_cls_label
         self.n_cls_label = n_cls_label
-        self.cuts = cuts
         
     def __version__(self):
         return '0.1.0'
         
-    def compute_table(self,X,y,return_result = False):
-        if is_numeric_dtype(X) or is_datetime64_any_dtype(X):
-            X = pd.qcut(X,self.cuts,duplicates='drop')
-        elif is_string_dtype(X):
-            X = X.astype('category')
-        X = X.cat.add_categories(['MISSING'])
-        X = X.fillna("MISSING")
-        self.X_name = X.name
-        
+    def compute_table(self,X,y,return_result = True,save_result=True):
+
+        self.X_name = X.name        
         df = pd.DataFrame({X.name :X.values,
                            y.name: y.values})
         
@@ -75,7 +105,8 @@ class odds_table():
                                 '% positive':'% {}'.format(self.p_cls_label),
                                 '% negative':'% {}'.format(self.n_cls_label)},
                     inplace=True)
-        self.table = df
+        if save_result:
+            self.table = df
         if return_result:
             return self.table
     
@@ -108,13 +139,20 @@ class odds_table():
         writer.save()
         
     
-##Test Code
-##seed for reproducibility
-#np.random.seed(200)
-#
-#df = pd.DataFrame({"a": np.random.rand(3000),
-#                    "b":[0,1,0]*1000,
-#                    "c":np.random.rand(3000)})    
-#ot = odds_table()
-#ot.compute_table(df['a'],df['b'])
-#ot.to_excel('ot.xlsx')        
+# =============================================================================
+# #Test Code
+# #seed for reproducibility
+# np.random.seed(200)
+# 
+# df = pd.DataFrame({"a": np.random.rand(3000),
+#                     "b":[0,1,0]*1000,
+#                     "c":np.random.rand(3000)})    
+# ot = OddsTable()
+# ot.compute_table(df['a'],df['b'])
+# 
+# nb = BasicNumericBinner()
+# nb.fit(df.a)
+# nb.transform(df.a)
+# nb.transform(df.c, ignore_name=True)
+# #ot.to_excel('ot.xlsx')        
+# =============================================================================
